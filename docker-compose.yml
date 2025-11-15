@@ -1,0 +1,22 @@
+services:
+  unrealircd:
+    container_name: unrealircd
+    build: .
+    environment:
+      DOMAIN: ${DOMAIN}
+      IRCDOMAIN: ${IRCDOMAIN}
+      OPERNAME: ${OPERNAME}
+      OPERPASS: ${OPERPASS}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}
+    ports:
+      - "6697:6697"
+      - "80:80"
+    volumes:
+      - unrealircd-data:/opt/unrealircd/unrealircd
+      - letsencrypt:/etc/letsencrypt
+      - ./conf:/opt/bootstrap/conf:ro
+    restart: unless-stopped
+
+volumes:
+  unrealircd-data:
+  letsencrypt:
