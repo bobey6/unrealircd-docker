@@ -8,6 +8,14 @@ services:
       OPERNAME: ${OPERNAME}
       OPERPASS: ${OPERPASS}
       LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}
+      # Optional Let's Encrypt DNS-01 support
+      CERTBOT_CHALLENGE: ${CERTBOT_CHALLENGE}
+      CERTBOT_DNS_PLUGIN: ${CERTBOT_DNS_PLUGIN}
+      CERTBOT_DNS_CREDENTIALS: ${CERTBOT_DNS_CREDENTIALS}
+      CERTBOT_DNS_PROPAGATION_SECONDS: ${CERTBOT_DNS_PROPAGATION_SECONDS}
+      # Optional direct tokens (use these OR CERTBOT_DNS_CREDENTIALS)
+      DNS_CLOUDFLARE_API_TOKEN: ${DNS_CLOUDFLARE_API_TOKEN}
+      DNS_DIGITALOCEAN_TOKEN: ${DNS_DIGITALOCEAN_TOKEN}
     ports:
       - "6697:6697"
       - "80:80"
@@ -15,6 +23,9 @@ services:
       - unrealircd-data:/opt/unrealircd/unrealircd
       - letsencrypt:/etc/letsencrypt
       - ./conf:/opt/bootstrap/conf:ro
+      # If using DNS-01 with a credentials file, mount it here, e.g.:
+      # - ./secrets/cloudflare.ini:/run/secrets/cloudflare.ini:ro
+      # If using token envs, no mount is required.
     restart: unless-stopped
 
 volumes:

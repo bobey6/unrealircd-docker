@@ -47,6 +47,7 @@ TARGET_CONF_DIR="${UNREAL_ROOT}/conf"
 TARGET_CONF="${TARGET_CONF_DIR}/unrealircd.conf"
 CERT_SOURCE_DIR="/etc/letsencrypt/live/${IRCDOMAIN}"
 CERT_TARGET_DIR="${UNREAL_ROOT}/tls-certs"
+CHALLENGE_METHOD="${CERTBOT_CHALLENGE:-http-01}"
 
 mkdir -p "${TARGET_CONF_DIR}"
 mkdir -p "${CERT_TARGET_DIR}"
@@ -57,14 +58,93 @@ if [[ ! -s "${CONFIG_TEMPLATE}" ]]; then
 fi
 
 if [[ ! -d "${CERT_SOURCE_DIR}" || ! -f "${CERT_SOURCE_DIR}/fullchain.pem" ]]; then
-  echo "Requesting Let's Encrypt certificate for ${IRCDOMAIN}"
-  certbot certonly \
-    --standalone \
-    --preferred-challenges http \
-    --agree-tos \
-    --non-interactive \
-    --email "${LETSENCRYPT_EMAIL}" \
-    -d "${IRCDOMAIN}"
+  echo "Requesting Let's Encrypt certificate for ${IRCDOMAIN} via ${CHALLENGE_METHOD}"
+  case "${CHALLENGE_METHOD}" in
+    http-01)
+      certbot certonly \
+        --standalone \
+        --preferred-challenges http \
+        --agree-tos \
+        --non-interactive \
+        --email "${LETSENCRYPT_EMAIL}" \
+        -d "${IRCDOMAIN}"
+      ;;
+    dns-01)
+      : "${CERTBOT_DNS_PLUGIN:?Error: CERTBOT_DNS_PLUGIN must be set for dns-01 (e.g., cloudflare or digitalocean)}"
+      PROPAGATION="${CERTBOT_DNS_PROPAGATION_SECONDS:-60}"
+      ensure_dns_credentials_file() {
+        local plugin="$1"
+        # If an explicit credentials file is provided, use it
+        if [[ -n "${CERTBOT_DNS_CREDENTIALS:-}" ]]; then
+          echo "${CERTBOT_DNS_CREDENTIALS}"
+          return 0
+        fi
+        local creds_path=""
+        case "$plugin" in
+          cloudflare)
+            # Prefer uppercase env, fallback to lowercase for convenience
+            local token="${DNS_CLOUDFLARE_API_TOKEN:-${dns_cloudflare_api_token:-}}"
+            if [[ -z "$token" ]]; then
+              echo "Error: Set DNS_CLOUDFLARE_API_TOKEN (or dns_cloudflare_api_token) or provide CERTBOT_DNS_CREDENTIALS for Cloudflare." >&2
+              return 1
+            fi
+            creds_path="/run/certbot/cloudflare.ini"
+            mkdir -p "$(dirname "$creds_path")"
+            umask 077
+            printf 'dns_cloudflare_api_token=%s\n' "$token" > "$creds_path"
+            ;;
+          digitalocean)
+            local token="${DNS_DIGITALOCEAN_TOKEN:-${dns_digitalocean_token:-}}"
+            if [[ -z "$token" ]]; then
+              echo "Error: Set DNS_DIGITALOCEAN_TOKEN (or dns_digitalocean_token) or provide CERTBOT_DNS_CREDENTIALS for DigitalOcean." >&2
+              return 1
+            fi
+            creds_path="/run/certbot/digitalocean.ini"
+            mkdir -p "$(dirname "$creds_path")"
+            umask 077
+            printf 'dns_digitalocean_token=%s\n' "$token" > "$creds_path"
+            ;;
+          *)
+            echo "Error: Unsupported CERTBOT_DNS_PLUGIN '$plugin'" >&2
+            return 1
+            ;;
+        esac
+        echo "$creds_path"
+      }
+      case "${CERTBOT_DNS_PLUGIN}" in
+        cloudflare)
+          CREDS_FILE="$(ensure_dns_credentials_file cloudflare)" || exit 1
+          certbot certonly \
+            --dns-cloudflare \
+            --dns-cloudflare-credentials "${CREDS_FILE}" \
+            --dns-cloudflare-propagation-seconds "${PROPAGATION}" \
+            --agree-tos \
+            --non-interactive \
+            --email "${LETSENCRYPT_EMAIL}" \
+            -d "${IRCDOMAIN}"
+          ;;
+        digitalocean)
+          CREDS_FILE="$(ensure_dns_credentials_file digitalocean)" || exit 1
+          certbot certonly \
+            --dns-digitalocean \
+            --dns-digitalocean-credentials "${CREDS_FILE}" \
+            --dns-digitalocean-propagation-seconds "${PROPAGATION}" \
+            --agree-tos \
+            --non-interactive \
+            --email "${LETSENCRYPT_EMAIL}" \
+            -d "${IRCDOMAIN}"
+          ;;
+        *)
+          echo "Error: Unsupported CERTBOT_DNS_PLUGIN='${CERTBOT_DNS_PLUGIN}'. Supported: cloudflare, digitalocean." >&2
+          exit 1
+          ;;
+      esac
+      ;;
+    *)
+      echo "Error: Unsupported CERTBOT_CHALLENGE='${CHALLENGE_METHOD}'. Use http-01 or dns-01." >&2
+      exit 1
+      ;;
+  esac
 fi
 
 cp "${CERT_SOURCE_DIR}/fullchain.pem" "${CERT_TARGET_DIR}/fullchain.pem"

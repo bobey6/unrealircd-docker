@@ -28,6 +28,8 @@ RUN apt-get update && \
         libtool \
         gettext-base \
         certbot \
+        python3-certbot-dns-cloudflare \
+        python3-certbot-dns-digitalocean \
         gosu \
         openssl \
         python3 \
